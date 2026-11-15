@@ -594,6 +594,11 @@ function holdDaysFor(age: number | null): number {
 function actionFor(p: SnapshotProtocol, capital: number, chain: string): string {
   const c = (p.category ?? '').toLowerCase();
   const name = p.name;
+  // "CDP Manager" contains "cdp", so the manager branch must fire before the
+  // CDP branch: DeFi Saver manages other protocols' CDPs, it has no CDP or
+  // stable asset of its own.
+  if (c.includes('cdp manager'))
+    return `Open a collateralised vault through ${name} on ${chain} and mint the stable asset through the vault it manages for you, keeping the position collateralised.`;
   if (c.includes('cdp'))
     return `Lock $${capital} of collateral in ${cdpName(name)}'s CDP on ${chain} and mint its stable asset, keeping the position collateralised.`;
   // Collateral/restaking protocols are not lenders: "Collateral Markets" must
@@ -649,12 +654,23 @@ function secondActionFor(p: SnapshotProtocol, capital: number, chain: string): s
   const c = (p.category ?? '').toLowerCase();
   const name = p.name;
   const half = Math.max(25, Math.round(capital / 2));
+  // "CDP Manager" contains "cdp", so the manager branch must fire before the
+  // CDP branch (same trap as above).
+  if (c.includes('cdp manager'))
+    return `Add $${half} of collateral through the vault ${name} manages on ${chain} once, so the wallet shows a second interaction with the managed position.`;
   if (c.includes('cdp'))
     return `Add $${half} of collateral to the ${cdpName(name)} CDP position on ${chain} once, so the wallet shows more than one interaction with the vault.`;
   // Collateral/restaking protocols are not lenders: keep "Collateral Markets"
   // out of the lend branch below (Symbiotic has no borrow function).
   if (c.includes('collateral market'))
     return `Deposit a second $${half} of collateral with ${name} on ${chain} into a different vault, so the wallet shows two collateral positions.`;
+  // "Uncollateralized Lending" contains "lend", but its credit lines are
+  // uncollateralized: there is no supplied collateral to borrow against, so
+  // the lend branch's collateral framing must not fire here. (Wording
+  // deliberately avoids the word "collateral" entirely, per the round-5
+  // acceptance check for this step.)
+  if (c.includes('uncollateralized'))
+    return `Draw $${half} from a credit line through ${name} on ${chain} — extended on creditworthiness, with no deposit required — and repay it within a week, leaving the supply position open.`;
   if (c.includes('lend') || c.includes('collateral'))
     return `Borrow $${half} against the supplied collateral on ${name}, repay it within a week, and leave the supply position open.`;
   // "Indexes" contains "dex", so the index branch must fire before the DEX branch.
