@@ -11,10 +11,10 @@ Token Radar — every protocol that records no token, ranked by what its launch 
 `main.ts` (Node 22, standard library only) reads a sealed snapshot of every protocol DefiLlama tracks and writes a ranked board:
 
 - **198 rows** — all 40 of the snapshot's watchlist, plus 158 early pre-token protocols below the $50M floor. Nothing is hard-coded by name: the same function scores every row.
-- **Implied value, comps-calibrated** — `TVL × category comp ratio × growth multiplier × maturity multiplier`. The comp ratio is the median market-cap / TVL of the live-token protocols in the same category (at least 3 comparables, otherwise the global median), capped at 2.00. Growth is the seven-day TVL change, clamped to −60%…+120% at half weight. Maturity is how long the protocol has run with no token: `0.60 + min(age, 1095) / 1095 × 0.40`.
+- **Implied value, from a size curve tested out of sample** — `exp(a + b × ln(TVL)) × growth × maturity`, where `log(market cap) = a + b × log(TVL)` is fitted by least squares on the 119 live-token protocols in the snapshot. A dollar of TVL is worth less at $3B than at $5M (fitted slope ≈ 0.47), so a flat multiple would overprice the giants. Before it is trusted, the curve is tested out of sample: the live tokens are split eight ways, the curve is fitted on each fit half and scored on its test half, and the same test is run for the category-median multiple it replaces — the curve wins on seven of the eight splits and on average (mean ≈ 86% median error vs ≈ 94%). The method tab prints the whole test.
 - **Set aside, not ranked** — 144 wrapped, staked or bridged products of tokens that already trade (WBTC, staked ETH, bridges…), versioned pools and exchange products. They are listed in the dashboard with the reason, never ranked as launches.
 - **Live tokens kept apart** — 24 protocols whose token already trades, shown with the market's own values as the board's price reference.
-- **A farm plan per row** — seven steps derived from the protocol's category, chains, TVL and age, each naming what it costs in dollars or gas and how long it takes.
+- **A farm plan per row, netted to a verdict** — seven steps derived from the protocol's category, chains, TVL and age, each naming what it costs in dollars or gas and how long it takes. The plan's gas is summed, and the break-even is how many farmers can split an assumed 5% of the implied value before one farmer's share stops covering the gas: **Farm** at 25,000 break-even farmers or more, **Thin** at 6,000 or more, **Skip** below that.
 
 ## Run it
 

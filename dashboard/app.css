@@ -97,6 +97,13 @@ tbody tr.selected { background: #1d2a20; box-shadow: inset 3px 0 0 var(--amber);
   border: 1px solid var(--amber); color: var(--amber); border-radius: 20px; padding: 1px 7px; margin-left: 8px; vertical-align: 1px;
 }
 .badge.early { border-color: var(--blue); color: var(--blue); }
+.verdict {
+  display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  border-radius: 6px; padding: 3px 9px; white-space: nowrap;
+}
+.verdict.v-farm { background: #14352a; color: var(--green); border: 1px solid #2a6b52; }
+.verdict.v-thin { background: #3a2f10; color: var(--amber); border: 1px solid #7a5f1d; }
+.verdict.v-skip { background: #2a2320; color: var(--dim); border: 1px solid #4a3f38; }
 .up { color: var(--green); }
 .down { color: var(--red); }
 .bar { display: inline-block; height: 6px; border-radius: 3px; background: var(--amber); vertical-align: middle; margin-right: 8px; min-width: 4px; }

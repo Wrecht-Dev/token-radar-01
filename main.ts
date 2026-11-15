@@ -1,7 +1,7 @@
-// Token Radar, radar-2 (Node 22, standard library only).
+// Token Radar, radar-3 (Node 22, standard library only).
 //
 // The program reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>),
-// scores every rankable pre-token protocol with the comps-calibrated model in lib/model.ts,
+// scores every rankable pre-token protocol with the size-curve model in lib/model.ts,
 // writes the ranked board to /output/board.json, and copies this repository's dashboard/
 // and screenshots/ to /output. Last, it writes /output/dossier.json, the summary the judge
 // reads, with the vendored make.fun library.
@@ -88,5 +88,6 @@ writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEX
 
 process.stdout.write(
   `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside, ${radar.excluded_size} excluded as products of tokens that trade)\n` +
+    `token radar: size curve log(mcap) = ${radar.curve.a} + ${radar.curve.b} x log(TVL) on ${radar.curve.n} live tokens (R2 ${radar.curve.r2}); out of sample ${radar.oos.curve_mean_pct}% vs ${radar.oos.median_mean_pct}% for category medians; verdicts ${radar.verdict_counts.Farm} Farm / ${radar.verdict_counts.Thin} Thin / ${radar.verdict_counts.Skip} Skip\n` +
     `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (3 files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );

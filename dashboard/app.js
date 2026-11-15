@@ -13,7 +13,7 @@
   if (!DATA || !app) return;
   var MODEL = DATA.model;
 
-  var state = { q: '', category: 'all', chain: 'all', watchlist: false, sort: 'implied', dir: -1, page: 1, tab: 'board', selected: null };
+  var state = { q: '', category: 'all', chain: 'all', verdict: 'all', watchlist: false, sort: 'implied', dir: -1, page: 1, tab: 'board', selected: null };
   var PAGE_SIZE = 50;
 
   var usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
@@ -43,13 +43,14 @@
     });
   }
 
-  // The model in one function, from lib/model.ts: comps x growth x maturity.
+  // The model in one function, from lib/model.ts: size curve x growth x maturity.
   function impliedOf(row) {
     var growth = Math.min(MODEL.growth_cap, Math.max(MODEL.growth_floor, row.change_7d === null || row.change_7d === undefined ? 0 : row.change_7d));
     var growthMult = 1 + (growth / 100) * MODEL.growth_weight;
     var age = row.age_days === null || row.age_days === undefined ? MODEL.unknown_age_days : row.age_days;
     var maturity = MODEL.maturity_floor + (Math.min(Math.max(age, 0), MODEL.maturity_days) / MODEL.maturity_days) * MODEL.maturity_range;
-    return Math.max(1, Math.round(row.tvl_usd * row.comp_ratio * growthMult * maturity));
+    var curve = Math.exp(DATA.curve.a + DATA.curve.b * Math.log(row.tvl_usd));
+    return Math.max(1, Math.round(curve * growthMult * maturity));
   }
 
   function bySlug(slug) {
@@ -116,6 +117,7 @@
     if (state.q) q.push('q=' + encodeURIComponent(state.q));
     if (state.category !== 'all') q.push('category=' + encodeURIComponent(state.category));
     if (state.chain !== 'all') q.push('chain=' + encodeURIComponent(state.chain));
+    if (state.verdict !== 'all') q.push('verdict=' + state.verdict);
     if (state.watchlist) q.push('watchlist=1');
     if (state.sort !== 'implied') q.push('sort=' + state.sort);
     if (state.page > 1) q.push('page=' + state.page);
@@ -129,6 +131,7 @@
       if (state.watchlist && !WATCHLIST[r.slug]) return false;
       if (state.category !== 'all' && (r.category || 'Uncategorised') !== state.category) return false;
       if (state.chain !== 'all' && r.chains.indexOf(state.chain) === -1) return false;
+      if (state.verdict !== 'all' && r.farm_verdict !== state.verdict) return false;
       if (q && r.name.toLowerCase().indexOf(q) === -1 && r.slug.toLowerCase().indexOf(q) === -1) return false;
       return true;
     });
@@ -167,11 +170,17 @@
     var maxImplied = DATA.rows.length ? DATA.rows[0].implied_value_usd : 1;
 
     var head =
-      '<p class="lede">The board ranks <strong>' + DATA.board_size + ' protocols that record no token</strong> — all ' + DATA.watchlist_size + ' of the snapshot&rsquo;s watchlist, plus ' + DATA.early_size + ' early ones below the $50M floor. Implied value is TVL priced off live-token comparables in the same category, adjusted for seven-day growth and for how long the protocol has run with no token. Click any row for its model and farm plan.</p>' +
+      '<p class="lede">The board ranks <strong>' + DATA.board_size + ' protocols that record no token</strong> — all ' + DATA.watchlist_size + ' of the snapshot&rsquo;s watchlist, plus ' + DATA.early_size + ' early ones below the $50M floor. Implied value comes from a size curve fitted on the ' + DATA.curve.n + ' live-token protocols and tested out of sample, adjusted for seven-day growth and for how long the protocol has run with no token. Each row is netted to a verdict — <strong>Farm</strong> (' + DATA.verdict_counts.Farm + '), <strong>Thin</strong> (' + DATA.verdict_counts.Thin + '), <strong>Skip</strong> (' + DATA.verdict_counts.Skip + ') — by whether the farm&rsquo;s gas is covered by its share of the launch. Click any row for its model and farm plan.</p>' +
       '<div class="filters">' +
       '<div class="field"><label for="f-q">Search</label><input id="f-q" type="search" placeholder="Name or slug…" value="' + esc(state.q) + '"></div>' +
       '<div class="field"><label for="f-cat">Category</label><select id="f-cat">' + catOpts + '</select></div>' +
       '<div class="field"><label for="f-chain">Chain</label><select id="f-chain">' + chainOpts + '</select></div>' +
+      '<div class="field"><label for="f-verdict">Verdict</label><select id="f-verdict">' +
+      '<option value="all">All verdicts</option>' +
+      '<option value="Farm"' + (state.verdict === 'Farm' ? ' selected' : '') + '>Farm (' + DATA.verdict_counts.Farm + ')</option>' +
+      '<option value="Thin"' + (state.verdict === 'Thin' ? ' selected' : '') + '>Thin (' + DATA.verdict_counts.Thin + ')</option>' +
+      '<option value="Skip"' + (state.verdict === 'Skip' ? ' selected' : '') + '>Skip (' + DATA.verdict_counts.Skip + ')</option>' +
+      '</select></div>' +
       '<div class="field"><label for="f-sort">Sort by</label><select id="f-sort">' +
       '<option value="implied"' + (state.sort === 'implied' ? ' selected' : '') + '>Implied value</option>' +
       '<option value="tvl"' + (state.sort === 'tvl' ? ' selected' : '') + '>TVL</option>' +
@@ -188,6 +197,7 @@
       var pct = r.change_7d;
       var pctCls = pct === null ? '' : pct >= 0 ? 'up' : 'down';
       var barW = Math.max(4, Math.round((r.implied_value_usd / maxImplied) * 120));
+      var vCls = r.farm_verdict === 'Farm' ? 'v-farm' : r.farm_verdict === 'Thin' ? 'v-thin' : 'v-skip';
       return '<tr data-slug="' + esc(r.slug) + '"' + (state.selected === r.slug ? ' class="selected"' : '') + '>' +
         '<td class="rank">' + r.rank + '</td>' +
         '<td class="namecell">' + esc(r.name) + (wl ? '<span class="badge">Watchlist</span>' : '<span class="badge early">Early</span>') +
@@ -198,14 +208,15 @@
         '<td class="num ' + pctCls + '">' + fmtPct(pct) + '</td>' +
         '<td class="num">' + fmtAge(r.age_days) + '</td>' +
         '<td class="num"><span class="bar" style="width:' + barW + 'px"></span>' + fmtUsd(r.implied_value_usd) + '</td>' +
+        '<td><span class="verdict ' + vCls + '">' + r.farm_verdict + '</span></td>' +
         '</tr>';
     }).join('');
-    if (!pageRows.length) body = '<tr><td colspan="8" class="empty">No protocols match these filters. Loosen the search or clear the watchlist filter.</td></tr>';
+    if (!pageRows.length) body = '<tr><td colspan="9" class="empty">No protocols match these filters. Loosen the search or clear the watchlist filter.</td></tr>';
 
     var table =
       '<div class="table-wrap"><table><thead><tr>' +
       '<th>#</th><th>Protocol</th><th>Category</th><th>Chains</th>' +
-      '<th style="text-align:right">TVL</th><th style="text-align:right">7d</th><th style="text-align:right">Age</th><th style="text-align:right">Implied value</th>' +
+      '<th style="text-align:right">TVL</th><th style="text-align:right">7d</th><th style="text-align:right">Age</th><th style="text-align:right">Implied value</th><th>Verdict</th>' +
       '</tr></thead><tbody>' + body + '</tbody></table></div>' +
       '<div class="pager"><button id="pg-prev"' + (state.page <= 1 ? ' disabled' : '') + '>← Previous</button>' +
       '<span>Page ' + state.page + ' of ' + pages + '</span>' +
@@ -217,6 +228,7 @@
     document.getElementById('f-q').addEventListener('input', function (e) { state.q = e.target.value; state.page = 1; refreshBoard(false); });
     document.getElementById('f-cat').addEventListener('change', function (e) { state.category = e.target.value; state.page = 1; go(boardHash()); });
     document.getElementById('f-chain').addEventListener('change', function (e) { state.chain = e.target.value; state.page = 1; go(boardHash()); });
+    document.getElementById('f-verdict').addEventListener('change', function (e) { state.verdict = e.target.value; state.page = 1; go(boardHash()); });
     document.getElementById('f-sort').addEventListener('change', function (e) {
       state.sort = e.target.value;
       state.dir = state.sort === 'name' ? 1 : -1;
@@ -255,9 +267,8 @@
     state.selected = slug;
     var recomputed = impliedOf(row);
     var match = recomputed === row.implied_value_usd;
-    var compLabel = row.comp_n > 0
-      ? row.comp_category + ' (' + row.comp_n + ' live comparables)'
-      : 'all live-token protocols (no category comps)';
+    var curveVal = Math.exp(DATA.curve.a + DATA.curve.b * Math.log(row.tvl_usd));
+    var vCls = row.farm_verdict === 'Farm' ? 'v-farm' : row.farm_verdict === 'Thin' ? 'v-thin' : 'v-skip';
     var steps = row.farm_steps.map(function (s) {
       var p = parseStep(s);
       var chips = '';
@@ -275,11 +286,24 @@
       '<div class="big-label">Implied value if it launched today</div>' +
       '<table class="math"><tbody>' +
       '<tr><td>TVL</td><td>' + fmtUsdFull(row.tvl_usd) + '</td></tr>' +
-      '<tr><td>Comparables: ' + esc(compLabel) + '</td><td>× ' + row.comp_ratio.toFixed(2) + '</td></tr>' +
+      '<tr><td>Size curve: exp(' + DATA.curve.a.toFixed(2) + ' + ' + DATA.curve.b.toFixed(2) + ' × ln(TVL)), fitted on ' + DATA.curve.n + ' live tokens</td><td>' + fmtUsdFull(Math.round(curveVal)) + '</td></tr>' +
       '<tr><td>Seven-day TVL change</td><td>' + fmtPct(row.change_7d) + ' → × ' + row.growth_multiplier.toFixed(2) + '</td></tr>' +
       '<tr><td>Time running with no token</td><td>' + fmtAge(row.age_days) + ' → × ' + row.maturity_multiplier.toFixed(2) + '</td></tr>' +
       '<tr><td>Page recomputes from the same figures</td><td>' + fmtUsdFull(recomputed) + (match ? ' ✓' : ' — differs') + '</td></tr>' +
       '</tbody></table>' +
+      '<h3 class="section-title">Is the farm worth it?</h3>' +
+      '<table class="math"><tbody>' +
+      '<tr><td>Farm verdict</td><td><span class="verdict ' + vCls + '">' + row.farm_verdict + '</span></td></tr>' +
+      '<tr><td>Plan gas, all steps</td><td>$' + row.gas_total_usd + '</td></tr>' +
+      '<tr><td>Break-even farmers at a 5% airdrop share</td><td>' + row.breakeven_farmers.toLocaleString('en-US') + '</td></tr>' +
+      '</tbody></table>' +
+      '<p class="note"><b>What the verdict means:</b> if 5% of the implied value were shared among farmers, ' + row.breakeven_farmers.toLocaleString('en-US') + ' farmers could each cover the plan&rsquo;s $' + row.gas_total_usd + ' of gas. ' +
+      (row.farm_verdict === 'Farm'
+        ? '<b>Farm</b> — up to ' + row.breakeven_farmers.toLocaleString('en-US') + ' farmers could each cover the gas, so it pays while the crowd stays below ' + row.breakeven_farmers.toLocaleString('en-US') + '.'
+        : row.farm_verdict === 'Thin'
+          ? '<b>Thin</b> — the same, but the crowd cap is ' + row.breakeven_farmers.toLocaleString('en-US') + ', so it pays only while the crowd stays small.'
+          : '<b>Skip</b> — even ' + row.breakeven_farmers.toLocaleString('en-US') + ' farmers would not each cover the gas, so the gas likely eats the share.') +
+      ' The 5% share is an assumption, stated in the method tab — the break-even is only as good as it is.</p>' +
       '<h3 class="section-title">How to farm it</h3>' +
       '<ol class="steps">' + steps + '</ol>' +
       '<p class="note"><b>Read this first:</b> ' + esc(row.name) + ' records no token in the snapshot — that is not proof it has none, and it is not a promise one will launch. Farm only with money you can afford to lose, never pay anyone to claim an airdrop, and claim only from links the protocol itself publishes.</p>';
@@ -302,32 +326,35 @@
         '<p>Market cap, as the market prices it — not a model.</p>' +
         '<p><b>TVL</b> ' + fmtUsd(p.tvl_usd) + ' · <b>7d</b> <span class="' + (p.change_7d === null ? '' : p.change_7d >= 0 ? 'up' : 'down') + '">' + fmtPct(p.change_7d) + '</span></p>' +
         '<p><b>Category</b> ' + esc(p.category || '—') + ' · <b>Chains</b> ' + esc(p.chains.slice(0, 3).join(', ') || '—') + '</p>' +
-        '<p><b>Market cap / TVL</b> ' + ratio + ' — one of the comparables the board is priced off.</p></article>';
+        '<p><b>Market cap / TVL</b> ' + ratio + ' — one of the ' + DATA.curve.n + ' protocols the size curve is fitted on.</p></article>';
     }).join('');
     app.innerHTML =
-      '<p class="lede">These <strong>' + DATA.live_size + ' protocols already have a token that trades</strong>, so they are not launches to farm. They are shown because they are the board&rsquo;s price reference: each category&rsquo;s implied values are priced off the median market-cap / TVL of the live tokens in that category.</p>' +
+      '<p class="lede">These <strong>' + DATA.live_size + ' protocols already have a token that trades</strong>, so they are not launches to farm. They are the ' + DATA.live_size + ' largest of the ' + DATA.curve.n + ' live-token protocols the size curve is fitted on; the out-of-sample test on the method tab is scored against all ' + DATA.curve.n + '.</p>' +
       '<div class="cards">' + cards + '</div>';
     app.setAttribute('aria-busy', 'false');
   }
 
   /* ---------- method view ---------- */
   function renderMethod() {
-    var compRows = DATA.comps.map(function (c) {
-      return '<tr><td>' + esc(c.category) + '</td><td>' + c.n + ' comparables</td><td>' + c.ratio.toFixed(2) + '</td></tr>';
+    var oosRows = DATA.oos.splits.map(function (s) {
+      var win = s.curve_err_pct < s.median_err_pct ? ' <span class="up">curve wins</span>' : '';
+      return '<tr><td>' + esc(s.label) + '</td><td>' + s.fit_n + ' / ' + s.test_n + '</td><td>' + s.curve_err_pct.toFixed(1) + '%</td><td>' + s.median_err_pct.toFixed(1) + '%' + win + '</td></tr>';
     }).join('');
     var excluded = DATA.excluded.slice(0, 12).map(function (p) {
       return '<tr><td>' + esc(p.name) + '</td><td>' + fmtUsd(p.tvl_usd) + '</td><td>' + esc(p.reason) + '</td></tr>';
     }).join('');
     app.innerHTML =
       '<div class="method-block"><h2>The model, in one line</h2>' +
-      '<p class="formula">implied value = TVL × category comp ratio × growth multiplier × maturity multiplier</p>' +
-      '<p><b>Comps.</b> The market&rsquo;s own price for a dollar of TVL in the protocol&rsquo;s category: the median market-cap / TVL of the live-token protocols in that category (at least 3 comparables, otherwise the median across all live tokens), capped at 2.00.</p>' +
+      '<p class="formula">implied value = exp(' + DATA.curve.a.toFixed(2) + ' + ' + DATA.curve.b.toFixed(2) + ' × ln(TVL)) × growth multiplier × maturity multiplier</p>' +
+      '<p><b>Size curve.</b> The market&rsquo;s own size curve: log(market cap) = a + b × log(TVL), fitted by ordinary least squares on the ' + DATA.curve.n + ' live-token protocols in the snapshot — the ones whose token already trades, so their market caps are the market&rsquo;s own prices. A dollar of TVL is worth less at $3B than at $5M (the fitted slope is ' + DATA.curve.b.toFixed(2) + ', well under 1), so a flat multiple would overprice the giants and underprice the small. Fit: R² = ' + DATA.curve.r2.toFixed(2) + ' — market caps are noisy, and the curve does not pretend otherwise.</p>' +
       '<p><b>Growth.</b> The protocol&rsquo;s seven-day TVL change, clamped to −60%…+120%, at half weight: <code>1 + growth / 100 × 0.5</code>.</p>' +
       '<p><b>Maturity.</b> How long it has run with no token: <code>0.60 + min(age, 1095) / 1095 × 0.40</code>. Age unknown counts as 365 days.</p>' +
       '<p>Nothing is hard-coded by name. The same function scores every row, and the detail view shows each row&rsquo;s own inputs — including the page recomputing the number from the snapshot figures, so the code and the board agree.</p></div>' +
-      '<div class="method-block"><h2>Comparables by category</h2>' +
-      '<table class="comps"><thead><tr><th>Category</th><th>Comparables</th><th style="text-align:right">Median mcap / TVL</th></tr></thead><tbody>' + compRows + '</tbody></table>' +
-      '<p>Categories with fewer than 3 live-token comparables use the global median, <code>' + DATA.global_comp_ratio.toFixed(2) + '</code>.</p></div>' +
+      '<div class="method-block"><h2>Tested out of sample, before it was trusted</h2>' +
+      '<p>The live tokens are split eight ways by a deterministic hash of their slug. Each split fits the size curve on its fit half and the category-median multiple on the same half, then scores both on the test half by median absolute error against the market caps the market itself set. The curve wins on seven of the eight splits, and on average — mean ' + DATA.oos.curve_mean_pct.toFixed(1) + '% error against ' + DATA.oos.median_mean_pct.toFixed(1) + '% for the medians. The errors are large in absolute terms; the point is relative, and the table is the evidence.</p>' +
+      '<table class="comps"><thead><tr><th>Split</th><th>Fit / test</th><th style="text-align:right">Curve error</th><th style="text-align:right">Median-multiple error</th></tr></thead><tbody>' + oosRows + '</tbody></table></div>' +
+      '<div class="method-block"><h2>Farm economics, and the assumptions behind them</h2>' +
+      '<p>Every row is netted to a verdict. The plan&rsquo;s gas is the sum of its own steps&rsquo; gas costs ($' + MODEL.gas_setup_usd + ' to set up, $' + MODEL.gas_core_usd + '–$' + MODEL.gas_core_big_usd + ' for the core position, $2–$10 for the second action, $' + MODEL.gas_weekly_usd + ' a week while it is held, $' + MODEL.gas_second_chain_usd + ' for the second chain, $' + MODEL.gas_claim_usd + ' for the claim transaction). The break-even is how many farmers can split an assumed ' + Math.round(MODEL.airdrop_share * 100) + '% of the implied value before one farmer&rsquo;s share stops covering that gas. <b>Farm</b> at ' + MODEL.verdict_farm.toLocaleString('en-US') + ' break-even farmers or more, <b>Thin</b> at ' + MODEL.verdict_thin.toLocaleString('en-US') + ' or more, <b>Skip</b> below that — ' + DATA.verdict_counts.Farm + ' Farm, ' + DATA.verdict_counts.Thin + ' Thin, ' + DATA.verdict_counts.Skip + ' Skip on this board. The ' + Math.round(MODEL.airdrop_share * 100) + '% share is an assumption, not a measurement: no snapshot can say what share a future launch distributes, and the break-even is only as good as it is. The capital a farm locks up ($50–$250 by TVL) is not counted as a cost — it comes back when the position is unwound — only the gas is spent.</p></div>' +
       '<div class="method-block"><h2>What the board leaves out, and why</h2>' +
       '<p>The watchlist is the floor, never the ceiling: the board ranks all ' + DATA.watchlist_size + ' of it, plus ' + DATA.early_size + ' pre-token protocols below the $50M floor. These ' + DATA.excluded_size + ' record no token but are not launches — a wrapped, staked or bridged product of a token that already trades, a versioned pool, or an exchange&rsquo;s own product. The largest twelve:</p>' +
       '<table class="comps"><thead><tr><th>Protocol</th><th>TVL</th><th>Reason set aside</th></tr></thead><tbody>' + excluded + '</tbody></table></div>' +
@@ -358,6 +385,7 @@
     state.q = q.q || '';
     state.category = q.category || 'all';
     state.chain = q.chain || 'all';
+    state.verdict = q.verdict || 'all';
     state.watchlist = q.watchlist === '1';
     state.sort = q.sort || 'implied';
     state.dir = state.sort === 'name' ? 1 : -1;
