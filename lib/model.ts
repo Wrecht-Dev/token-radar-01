@@ -367,6 +367,12 @@ function slugHash(slug: string): number {
 export function oosTest(snapshot: Snapshot, model: ModelConstants = MODEL): OosTest {
   const live = liveForCurve(snapshot);
   const splits: OosSplit[] = [];
+  // Unrounded per-split medians: the reported means average these, not the
+  // already-rounded per-split values — rounding first moved the full-model
+  // mean from 85.7% to 85.8%.
+  const curveMed: number[] = [];
+  const fullMed: number[] = [];
+  const medianMed: number[] = [];
   for (const k of [2, 3, 4, 5]) {
     for (const r of [0, 1]) {
       const fit = live.filter((p) => slugHash(p.slug) % k === r);
@@ -396,6 +402,9 @@ export function oosTest(snapshot: Snapshot, model: ModelConstants = MODEL): OosT
         const medPred = p.tvl_usd * (catMed.get(p.category ?? 'Uncategorised') ?? globalMed);
         medErrs.push(Math.abs(medPred - p.mcap_usd!) / p.mcap_usd!);
       }
+      curveMed.push(100 * median(curveErrs));
+      fullMed.push(100 * median(fullErrs));
+      medianMed.push(100 * median(medErrs));
       splits.push({
         label: `hash % ${k} = ${r}`,
         fit_n: fit.length,
@@ -409,9 +418,9 @@ export function oosTest(snapshot: Snapshot, model: ModelConstants = MODEL): OosT
   const mean = (xs: number[]): number => xs.reduce((s, x) => s + x, 0) / xs.length;
   return {
     splits,
-    curve_mean_pct: round1(mean(splits.map((s) => s.curve_err_pct))),
-    full_mean_pct: round1(mean(splits.map((s) => s.full_err_pct))),
-    median_mean_pct: round1(mean(splits.map((s) => s.median_err_pct))),
+    curve_mean_pct: round1(mean(curveMed)),
+    full_mean_pct: round1(mean(fullMed)),
+    median_mean_pct: round1(mean(medianMed)),
   };
 }
 
@@ -555,6 +564,11 @@ function chainOf(p: SnapshotProtocol): string {
   return p.chains.length > 0 ? p.chains[0]! : 'its main chain';
 }
 
+/** A protocol name with a trailing " CDP" stripped, so templates that add "'s CDP" don't stutter. */
+function cdpName(name: string): string {
+  return name.replace(/ CDP$/, '');
+}
+
 /** A second chain when the protocol runs on more than one, for the cross-chain step. */
 function secondChainOf(p: SnapshotProtocol): string | null {
   return p.chains.length > 1 ? p.chains[1]! : null;
@@ -581,9 +595,16 @@ function actionFor(p: SnapshotProtocol, capital: number, chain: string): string 
   const c = (p.category ?? '').toLowerCase();
   const name = p.name;
   if (c.includes('cdp'))
-    return `Lock $${capital} of collateral in ${name}'s CDP on ${chain} and mint its stable asset, keeping the position collateralised.`;
+    return `Lock $${capital} of collateral in ${cdpName(name)}'s CDP on ${chain} and mint its stable asset, keeping the position collateralised.`;
+  // Collateral/restaking protocols are not lenders: "Collateral Markets" must
+  // not fall through to the lend branch below (Symbiotic has no borrow function).
+  if (c.includes('collateral market'))
+    return `Deposit $${capital} of collateral with ${name} on ${chain} to secure the networks it restakes for, and hold the receipt position in the farming wallet.`;
   if (c.includes('lend') || c.includes('collateral'))
     return `Supply $${capital} of USDC to ${name} on ${chain} as a lender and keep the position open, so the protocol records you as a supplier.`;
+  // "Indexes" contains "dex", so the index branch must fire before the DEX branch.
+  if (c.includes('index'))
+    return `Buy $${capital} of ${name}'s index token on ${chain} and hold it in the farming wallet.`;
   if (c.includes('dex') || c.includes('yield') || c.includes('leveraged farm') || c.includes('liquidity'))
     return `Provide $${capital} of liquidity to ${name}'s main pool on ${chain} and keep the position open through at least one fee cycle.`;
   if (c.includes('bridge'))
@@ -611,7 +632,7 @@ function actionFor(p: SnapshotProtocol, capital: number, chain: string): string 
   if (c.includes('basis trading'))
     return `Open a $${capital} delta-neutral basis position through ${name} on ${chain}: long spot, short the perp it hedges against, and hold both legs.`;
   if (c.includes('chain'))
-    return `Bridge $${capital} of USDC onto ${name} on ${chain} and use it in the chain's own leading app, keeping the funds on-chain.`;
+    return `Bridge $${capital} of USDC onto ${chain} and use it in ${name}'s leading app, keeping the funds on-chain.`;
   if (c.includes('cedefi'))
     return `Deposit $${capital} of USDC into ${name}'s CeDeFi vault on ${chain} and hold the vault position in the farming wallet.`;
   if (c.includes('farm'))
@@ -620,8 +641,6 @@ function actionFor(p: SnapshotProtocol, capital: number, chain: string): string 
     return `Lock $${capital} of BTC with ${name} on ${chain} and hold the receipt token it issues.`;
   if (c.includes('otc marketplace'))
     return `Place one $${capital} OTC quote through ${name} on ${chain} and settle it in the wallet you farm with.`;
-  if (c.includes('index'))
-    return `Buy $${capital} of ${name}'s index token on ${chain} and hold it in the farming wallet.`;
   return `Deposit $${capital} of USDC into ${name} on ${chain} and keep the position open so the protocol records an active user.`;
 }
 
@@ -631,9 +650,16 @@ function secondActionFor(p: SnapshotProtocol, capital: number, chain: string): s
   const name = p.name;
   const half = Math.max(25, Math.round(capital / 2));
   if (c.includes('cdp'))
-    return `Add $${half} of collateral to the ${name} CDP position on ${chain} once, so the wallet shows more than one interaction with the vault.`;
+    return `Add $${half} of collateral to the ${cdpName(name)} CDP position on ${chain} once, so the wallet shows more than one interaction with the vault.`;
+  // Collateral/restaking protocols are not lenders: keep "Collateral Markets"
+  // out of the lend branch below (Symbiotic has no borrow function).
+  if (c.includes('collateral market'))
+    return `Deposit a second $${half} of collateral with ${name} on ${chain} into a different vault, so the wallet shows two collateral positions.`;
   if (c.includes('lend') || c.includes('collateral'))
     return `Borrow $${half} against the supplied collateral on ${name}, repay it within a week, and leave the supply position open.`;
+  // "Indexes" contains "dex", so the index branch must fire before the DEX branch.
+  if (c.includes('index'))
+    return `Rebalance $${half} of the index position through ${name} on ${chain} once, so the wallet shows a second interaction with the index.`;
   if (c.includes('dex') || c.includes('yield') || c.includes('liquidity'))
     return `Swap $${half} through ${name}'s own router on ${chain} once a week, in the pool you already provide liquidity to.`;
   if (c.includes('bridge')) return `Bridge $${half} back through ${name} the following week, so the protocol sees two-way volume from the same wallet.`;
@@ -652,7 +678,7 @@ function secondActionFor(p: SnapshotProtocol, capital: number, chain: string): s
   if (c.includes('basis trading'))
     return `Open a second $${half} basis position through ${name} on ${chain} in a different market, so the wallet shows two basis trades.`;
   if (c.includes('chain'))
-    return `Use the bridged funds in a second app on ${name} on ${chain} once, so the wallet shows activity in more than one of the chain's apps.`;
+    return `Use the bridged funds in a second app on ${chain} once, so the wallet shows activity in more than one of the chain's apps.`;
   if (c.includes('cedefi'))
     return `Deposit $${half} more into the ${name} vault on ${chain} once, so the wallet shows a second CeDeFi deposit.`;
   if (c.includes('farm'))
@@ -667,8 +693,6 @@ function secondActionFor(p: SnapshotProtocol, capital: number, chain: string): s
     return `Extend the cover by $${half} through ${name} on ${chain} once, so the wallet shows a second interaction with the policy.`;
   if (c.includes('governance'))
     return `Vote on a second proposal through ${name} on ${chain} once, so the wallet shows two governance interactions.`;
-  if (c.includes('index'))
-    return `Rebalance $${half} of the index position through ${name} on ${chain} once, so the wallet shows a second interaction with the index.`;
   return `Use ${name}'s second feature on ${chain} with $${half} once — a swap, a vote, a claim or a second deposit — so the wallet is not a one-action address.`;
 }
 
@@ -703,7 +727,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
     });
   } else {
     steps.push({
-      text: `Open the protocol's own page for the position and confirm it shows under the farming wallet, so you know the activity is registered before the hold begins.`,
+      text: `Check the position in the farming wallet and confirm the funds are where the plan put them, so you know the activity is registered before the hold begins.`,
       cost: 'no fee to check',
       time: '10 minutes',
     });
