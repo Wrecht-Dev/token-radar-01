@@ -169,6 +169,8 @@ tbody tr.selected { background: #1d2a20; box-shadow: inset 3px 0 0 var(--amber);
 .method-block h2 { font-size: 18px; margin-bottom: 8px; }
 .method-block p { color: var(--dim); margin: 8px 0; max-width: 820px; }
 .method-block p b, .method-block li b { color: var(--ink); }
+.checklist { list-style: disc; padding-left: 22px; margin: 8px 0; max-width: 820px; }
+.checklist li { color: var(--dim); margin: 6px 0; }
 .method-block code { font-family: var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; font-size: 13px; }
 .formula { font-family: var(--mono); font-size: 15px; color: var(--amber); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
 .comps { width: 100%; max-width: 640px; }

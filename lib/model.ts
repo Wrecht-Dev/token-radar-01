@@ -750,12 +750,12 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
   }
   steps.push(
     {
-      text: `Hold the position for at least ${hold} days and do one qualifying action each week — a deposit, a swap, a vote or a claim — so the activity spans more than one snapshot.`,
+      text: `Hold the position for at least ${hold} days and repeat step 3's action once a week, so the activity spans more than one snapshot.`,
       cost: `about $${weeklyGasTotal} of gas over ${weeks} weeks`,
       time: `10 minutes a week for ${hold} days`,
     },
     {
-      text: `Before you withdraw anything, open the protocol's own points or rewards page from the link it publishes itself and check what the wallet has earned; claim only from that page.`,
+      text: `Before you withdraw anything, check whether the protocol has published a points or rewards page; if it has, open it from the link the protocol publishes itself and check what the wallet has earned, and claim only from that page.`,
       cost: `no fee to check; $${MODEL.gas_claim_usd} of gas only if you claim`,
       time: '10 minutes',
     },
