@@ -348,10 +348,10 @@
       '<div class="method-block"><h2>Where to find the evidence</h2>' +
       '<p>This tab states the method; the board states the claim. Each line below points at the place that backs it — nothing here is new evidence, only signposts.</p>' +
       '<ul class="checklist">' +
-      '<li><b>Coverage.</b> The board ranks ' + DATA.board_size + ' protocols — all ' + DATA.watchlist_size + ' of the snapshot&rsquo;s watchlist plus ' + DATA.early_size + ' early finds below the $50M floor — sortable by implied value, TVL, 7-day growth, age or name, and filterable by search, category, chain, verdict and watchlist. The ' + DATA.excluded_size + ' protocols set aside are listed below, with the reason each was left out.</li>' +
+      '<li><b>Coverage.</b> The board ranks ' + DATA.board_size + ' protocols — all ' + DATA.watchlist_size + ' of the snapshot&rsquo;s watchlist plus ' + DATA.early_size + ' early finds below the $50M floor — sortable by implied value, TVL, 7-day growth, age or name, and filterable by search, category, chain, verdict and watchlist. The ' + DATA.excluded_size + ' protocols set aside are counted below; the largest twelve are listed, with the reason each was left out.</li>' +
       '<li><b>The value model.</b> The size curve, its fit and its out-of-sample test are in the two sections below; open any row&rsquo;s detail view to see the same curve recomputed from that row&rsquo;s own figures.</li>' +
       '<li><b>The farm plans.</b> Click any board row: the detail view shows the plan&rsquo;s gas, its break-even crowd size and its verdict — ' + DATA.verdict_counts.Farm + ' Farm, ' + DATA.verdict_counts.Thin + ' Thin, ' + DATA.verdict_counts.Skip + ' Skip — then the seven steps.</li>' +
-      '<li><b>Live vs pre-token.</b> The &ldquo;Already trading&rdquo; tab shows the live-token protocols the curve is fitted on, kept separate from the board, so a token that already trades is never scored as a launch.</li>' +
+      '<li><b>Live vs pre-token.</b> The &ldquo;Already trading&rdquo; tab shows the largest ' + DATA.live_size + ' of the ' + DATA.curve.n + ' live-token protocols the curve is fitted on, kept separate from the board, so a token that already trades is never scored as a launch.</li>' +
       '</ul></div>' +
       '<div class="method-block"><h2>The model, in one line</h2>' +
       '<p class="formula">implied value = exp(' + DATA.curve.a.toFixed(2) + ' + ' + DATA.curve.b.toFixed(2) + ' × ln(TVL)) × growth multiplier × maturity multiplier</p>' +
