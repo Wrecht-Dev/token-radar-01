@@ -202,6 +202,7 @@ export interface OosSplit {
   fit_n: number;
   test_n: number;
   curve_err_pct: number;
+  full_err_pct: number;
   median_err_pct: number;
 }
 
@@ -209,6 +210,7 @@ export interface OosSplit {
 export interface OosTest {
   splits: OosSplit[];
   curve_mean_pct: number;
+  full_mean_pct: number;
   median_mean_pct: number;
 }
 
@@ -355,12 +357,14 @@ function slugHash(slug: string): number {
 /**
  * The out-of-sample test: eight deterministic splits of the live tokens (four moduli,
  * both parities). Each split fits the size curve on its fit half and the category-median
- * multiple on the same half, then scores both on the test half by median absolute error
- * against the market caps the market itself set. The curve wins on seven of the eight
- * splits of this snapshot and on average; the method tab prints the whole table so the
- * claim can be checked.
+ * multiple on the same half, then scores the curve, the full shipped model (curve with
+ * the growth and maturity multipliers applied) and the medians on the test half by
+ * median absolute error against the market caps the market itself set. The curve wins
+ * on seven of the eight splits of this snapshot and on average; the method tab prints
+ * the whole table so the claim can be checked — including the full-model column, which
+ * shows the multipliers reorder the board on judgement, not on a measured edge.
  */
-export function oosTest(snapshot: Snapshot): OosTest {
+export function oosTest(snapshot: Snapshot, model: ModelConstants = MODEL): OosTest {
   const live = liveForCurve(snapshot);
   const splits: OosSplit[] = [];
   for (const k of [2, 3, 4, 5]) {
@@ -379,10 +383,16 @@ export function oosTest(snapshot: Snapshot): OosTest {
       const catMed = new Map<string, number>();
       for (const [c, ratios] of byCat) if (ratios.length >= 3) catMed.set(c, median(ratios));
       const curveErrs: number[] = [];
+      const fullErrs: number[] = [];
       const medErrs: number[] = [];
       for (const p of test) {
         const curvePred = Math.exp(a + b * Math.log(p.tvl_usd));
         curveErrs.push(Math.abs(curvePred - p.mcap_usd!) / p.mcap_usd!);
+        const fullPred =
+          curvePred *
+          growthMultiplier(p.change_7d, model) *
+          maturityMultiplier(ageDays(snapshot.as_of, p.listed_at), model);
+        fullErrs.push(Math.abs(fullPred - p.mcap_usd!) / p.mcap_usd!);
         const medPred = p.tvl_usd * (catMed.get(p.category ?? 'Uncategorised') ?? globalMed);
         medErrs.push(Math.abs(medPred - p.mcap_usd!) / p.mcap_usd!);
       }
@@ -391,6 +401,7 @@ export function oosTest(snapshot: Snapshot): OosTest {
         fit_n: fit.length,
         test_n: test.length,
         curve_err_pct: round1(100 * median(curveErrs)),
+        full_err_pct: round1(100 * median(fullErrs)),
         median_err_pct: round1(100 * median(medErrs)),
       });
     }
@@ -399,6 +410,7 @@ export function oosTest(snapshot: Snapshot): OosTest {
   return {
     splits,
     curve_mean_pct: round1(mean(splits.map((s) => s.curve_err_pct))),
+    full_mean_pct: round1(mean(splits.map((s) => s.full_err_pct))),
     median_mean_pct: round1(mean(splits.map((s) => s.median_err_pct))),
   };
 }
@@ -406,6 +418,21 @@ export function oosTest(snapshot: Snapshot): OosTest {
 /** The curve value one protocol gets, before the growth and maturity multipliers. */
 export function curveValue(protocol: SnapshotProtocol, curve: SizeCurve): number {
   return Math.exp(curve.a + curve.b * Math.log(protocol.tvl_usd));
+}
+
+/** The growth multiplier: the 7-day TVL change, clamped, at half weight. */
+export function growthMultiplier(change7d: number | null, model: ModelConstants = MODEL): number {
+  const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, finite(change7d, 0)));
+  return 1 + (growthPct / 100) * model.growth_weight;
+}
+
+/** The maturity multiplier: how long the protocol has run with no token. */
+export function maturityMultiplier(age: number | null, model: ModelConstants = MODEL): number {
+  const ageForModel = age ?? model.unknown_age_days;
+  return (
+    model.maturity_floor +
+    (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range
+  );
 }
 
 /** The multipliers and the implied value one protocol gets under `model`. */
@@ -423,12 +450,9 @@ export function impliedValue(
   age: number | null;
 } {
   const age = ageDays(asOf, protocol.listed_at);
-  const rawGrowth = finite(protocol.change_7d, 0);
-  const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, rawGrowth));
-  const growthMult = 1 + (growthPct / 100) * model.growth_weight;
-  const ageForModel = age ?? model.unknown_age_days;
-  const maturityMult =
-    model.maturity_floor + (Math.min(Math.max(ageForModel, 0), model.maturity_days) / model.maturity_days) * model.maturity_range;
+  const growthPct = Math.min(model.growth_cap, Math.max(model.growth_floor, finite(protocol.change_7d, 0)));
+  const growthMult = growthMultiplier(protocol.change_7d, model);
+  const maturityMult = maturityMultiplier(age, model);
   const curveValueUsd = curveValue(protocol, curve);
   const implied = Math.max(1, Math.round(curveValueUsd * growthMult * maturityMult));
   return { implied, curveValueUsd, growthPct, growthMult, maturityMult, age };
@@ -584,6 +608,20 @@ function actionFor(p: SnapshotProtocol, capital: number, chain: string): string 
     return `Run $${capital} through ${name}'s private transfer flow on ${chain} once, using the wallet you farm with.`;
   if (c.includes('payment') || c.includes('card'))
     return `Spend $${capital} through ${name} on ${chain} in two separate transactions a week apart.`;
+  if (c.includes('basis trading'))
+    return `Open a $${capital} delta-neutral basis position through ${name} on ${chain}: long spot, short the perp it hedges against, and hold both legs.`;
+  if (c.includes('chain'))
+    return `Bridge $${capital} of USDC onto ${name} on ${chain} and use it in the chain's own leading app, keeping the funds on-chain.`;
+  if (c.includes('cedefi'))
+    return `Deposit $${capital} of USDC into ${name}'s CeDeFi vault on ${chain} and hold the vault position in the farming wallet.`;
+  if (c.includes('farm'))
+    return `Stake $${capital} of USDC in ${name}'s farm on ${chain} and keep the position open through at least one reward cycle.`;
+  if (c.includes('anchor btc') || c.includes('decentralized btc'))
+    return `Lock $${capital} of BTC with ${name} on ${chain} and hold the receipt token it issues.`;
+  if (c.includes('otc marketplace'))
+    return `Place one $${capital} OTC quote through ${name} on ${chain} and settle it in the wallet you farm with.`;
+  if (c.includes('index'))
+    return `Buy $${capital} of ${name}'s index token on ${chain} and hold it in the farming wallet.`;
   return `Deposit $${capital} of USDC into ${name} on ${chain} and keep the position open so the protocol records an active user.`;
 }
 
@@ -607,6 +645,30 @@ function secondActionFor(p: SnapshotProtocol, capital: number, chain: string): s
     return `Move $${half} into a second ${name} vault on ${chain} with a different strategy, so the wallet shows two vault positions.`;
   if (c.includes('stable') || c.includes('rwa'))
     return `Redeem $${half} of the asset back through ${name} on ${chain} after two weeks, then re-mint it to show a full cycle.`;
+  if (c.includes('prediction'))
+    return `Place a second $${half} position in a market on the opposite side, or in a market settling a different week, so the wallet shows two settled outcomes.`;
+  if (c.includes('leveraged farm'))
+    return `Swap $${half} through ${name}'s own router on ${chain} once a week, in the pool you already farm.`;
+  if (c.includes('basis trading'))
+    return `Open a second $${half} basis position through ${name} on ${chain} in a different market, so the wallet shows two basis trades.`;
+  if (c.includes('chain'))
+    return `Use the bridged funds in a second app on ${name} on ${chain} once, so the wallet shows activity in more than one of the chain's apps.`;
+  if (c.includes('cedefi'))
+    return `Deposit $${half} more into the ${name} vault on ${chain} once, so the wallet shows a second CeDeFi deposit.`;
+  if (c.includes('farm'))
+    return `Claim the farm rewards ${name} accrues on ${chain} once, and restake them instead of selling.`;
+  if (c.includes('anchor btc') || c.includes('decentralized btc'))
+    return `Lock a second $${half} of BTC with ${name} on ${chain} once, so the wallet shows two BTC locks.`;
+  if (c.includes('otc marketplace'))
+    return `Place a second $${half} OTC quote through ${name} on ${chain} once, on the other side of the book, so the wallet shows two settled quotes.`;
+  if (c.includes('payment') || c.includes('card'))
+    return `Make a second $${half} spend through ${name} on ${chain} to a different merchant a week later.`;
+  if (c.includes('insurance'))
+    return `Extend the cover by $${half} through ${name} on ${chain} once, so the wallet shows a second interaction with the policy.`;
+  if (c.includes('governance'))
+    return `Vote on a second proposal through ${name} on ${chain} once, so the wallet shows two governance interactions.`;
+  if (c.includes('index'))
+    return `Rebalance $${half} of the index position through ${name} on ${chain} once, so the wallet shows a second interaction with the index.`;
   return `Use ${name}'s second feature on ${chain} with $${half} once — a swap, a vote, a claim or a second deposit — so the wallet is not a one-action address.`;
 }
 
@@ -641,7 +703,7 @@ export function farmSteps(p: SnapshotProtocol, age: number | null): FarmStep[] {
     });
   } else {
     steps.push({
-      text: `Open the protocol's own points, quests or rewards page and complete the one task it lists for new users, using the same wallet.`,
+      text: `Open the protocol's own page for the position and confirm it shows under the farming wallet, so you know the activity is registered before the hold begins.`,
       cost: 'no fee to check',
       time: '10 minutes',
     });
@@ -726,7 +788,7 @@ export function buildRadar(
 ): { board: BoardRow[]; radar: RadarData } {
   const board = buildBoard(snapshot, model);
   const curve = buildSizeCurve(snapshot);
-  const oos = oosTest(snapshot);
+  const oos = oosTest(snapshot, model);
   const live = liveRows(snapshot);
   const excluded = excludedRows(snapshot);
   const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;

@@ -170,7 +170,7 @@
     var maxImplied = DATA.rows.length ? DATA.rows[0].implied_value_usd : 1;
 
     var head =
-      '<p class="lede">The board ranks <strong>' + DATA.board_size + ' protocols that record no token</strong> — all ' + DATA.watchlist_size + ' of the snapshot&rsquo;s watchlist, plus ' + DATA.early_size + ' early ones below the $50M floor. Implied value comes from a size curve fitted on the ' + DATA.curve.n + ' live-token protocols and tested out of sample, adjusted for seven-day growth and for how long the protocol has run with no token. Each row is netted to a verdict — <strong>Farm</strong> (' + DATA.verdict_counts.Farm + '), <strong>Thin</strong> (' + DATA.verdict_counts.Thin + '), <strong>Skip</strong> (' + DATA.verdict_counts.Skip + ') — by whether the farm&rsquo;s gas is covered by its share of the launch. Click any row for its model and farm plan.</p>' +
+      '<p class="lede">The board ranks <strong>' + DATA.board_size + ' protocols that record no token</strong> — all ' + DATA.watchlist_size + ' of the snapshot&rsquo;s watchlist, plus ' + DATA.early_size + ' early ones below the $50M floor. Implied value comes from a size curve fitted on the ' + DATA.curve.n + ' live-token protocols and tested out of sample, adjusted — as a stated prior, not a fitted effect — for seven-day growth and for how long the protocol has run with no token. Each row is netted to a verdict — <strong>Farm</strong> (' + DATA.verdict_counts.Farm + '), <strong>Thin</strong> (' + DATA.verdict_counts.Thin + '), <strong>Skip</strong> (' + DATA.verdict_counts.Skip + ') — by whether the farm&rsquo;s gas is covered by its share of the launch. Click any row for its model and farm plan.</p>' +
       '<div class="filters">' +
       '<div class="field"><label for="f-q">Search</label><input id="f-q" type="search" placeholder="Name or slug…" value="' + esc(state.q) + '"></div>' +
       '<div class="field"><label for="f-cat">Category</label><select id="f-cat">' + catOpts + '</select></div>' +
@@ -208,15 +208,16 @@
         '<td class="num ' + pctCls + '">' + fmtPct(pct) + '</td>' +
         '<td class="num">' + fmtAge(r.age_days) + '</td>' +
         '<td class="num"><span class="bar" style="width:' + barW + 'px"></span>' + fmtUsd(r.implied_value_usd) + '</td>' +
+        '<td class="num">' + r.breakeven_farmers.toLocaleString('en-US') + '</td>' +
         '<td><span class="verdict ' + vCls + '">' + r.farm_verdict + '</span></td>' +
         '</tr>';
     }).join('');
-    if (!pageRows.length) body = '<tr><td colspan="9" class="empty">No protocols match these filters. Loosen the search or clear the watchlist filter.</td></tr>';
+    if (!pageRows.length) body = '<tr><td colspan="10" class="empty">No protocols match these filters. Loosen the search or clear the watchlist filter.</td></tr>';
 
     var table =
       '<div class="table-wrap"><table><thead><tr>' +
       '<th>#</th><th>Protocol</th><th>Category</th><th>Chains</th>' +
-      '<th style="text-align:right">TVL</th><th style="text-align:right">7d</th><th style="text-align:right">Age</th><th style="text-align:right">Implied value</th><th>Verdict</th>' +
+      '<th style="text-align:right">TVL</th><th style="text-align:right">7d</th><th style="text-align:right">Age</th><th style="text-align:right">Implied value</th><th style="text-align:right">Break-even</th><th>Verdict</th>' +
       '</tr></thead><tbody>' + body + '</tbody></table></div>' +
       '<div class="pager"><button id="pg-prev"' + (state.page <= 1 ? ' disabled' : '') + '>← Previous</button>' +
       '<span>Page ' + state.page + ' of ' + pages + '</span>' +
@@ -338,7 +339,7 @@
   function renderMethod() {
     var oosRows = DATA.oos.splits.map(function (s) {
       var win = s.curve_err_pct < s.median_err_pct ? ' <span class="up">curve wins</span>' : '';
-      return '<tr><td>' + esc(s.label) + '</td><td>' + s.fit_n + ' / ' + s.test_n + '</td><td>' + s.curve_err_pct.toFixed(1) + '%</td><td>' + s.median_err_pct.toFixed(1) + '%' + win + '</td></tr>';
+      return '<tr><td>' + esc(s.label) + '</td><td>' + s.fit_n + ' / ' + s.test_n + '</td><td>' + s.curve_err_pct.toFixed(1) + '%</td><td>' + s.full_err_pct.toFixed(1) + '%</td><td>' + s.median_err_pct.toFixed(1) + '%' + win + '</td></tr>';
     }).join('');
     var excluded = DATA.excluded.slice(0, 12).map(function (p) {
       return '<tr><td>' + esc(p.name) + '</td><td>' + fmtUsd(p.tvl_usd) + '</td><td>' + esc(p.reason) + '</td></tr>';
@@ -351,8 +352,8 @@
       '<p><b>Maturity.</b> How long it has run with no token: <code>0.60 + min(age, 1095) / 1095 × 0.40</code>. Age unknown counts as 365 days.</p>' +
       '<p>Nothing is hard-coded by name. The same function scores every row, and the detail view shows each row&rsquo;s own inputs — including the page recomputing the number from the snapshot figures, so the code and the board agree.</p></div>' +
       '<div class="method-block"><h2>Tested out of sample, before it was trusted</h2>' +
-      '<p>The live tokens are split eight ways by a deterministic hash of their slug. Each split fits the size curve on its fit half and the category-median multiple on the same half, then scores both on the test half by median absolute error against the market caps the market itself set. The curve wins on seven of the eight splits, and on average — mean ' + DATA.oos.curve_mean_pct.toFixed(1) + '% error against ' + DATA.oos.median_mean_pct.toFixed(1) + '% for the medians. The errors are large in absolute terms; the point is relative, and the table is the evidence.</p>' +
-      '<table class="comps"><thead><tr><th>Split</th><th>Fit / test</th><th style="text-align:right">Curve error</th><th style="text-align:right">Median-multiple error</th></tr></thead><tbody>' + oosRows + '</tbody></table></div>' +
+      '<p>The live tokens are split eight ways by a deterministic hash of their slug. Each split fits the size curve on its fit half and the category-median multiple on the same half, then scores the curve, the full model and the medians on the test half by median absolute error against the market caps the market itself set. The curve wins on seven of the eight splits, and on average — mean ' + DATA.oos.curve_mean_pct.toFixed(1) + '% error against ' + DATA.oos.median_mean_pct.toFixed(1) + '% for the medians. Scored the same way, the full model — the curve with the growth and maturity multipliers — errs ' + DATA.oos.full_mean_pct.toFixed(1) + '% on average against ' + DATA.oos.curve_mean_pct.toFixed(1) + '% for the curve alone: the multipliers reorder the board on judgement, not on a measured edge, and are stated as a prior, not a fitted effect. The errors are large in absolute terms; the point is relative, and the table is the evidence.</p>' +
+      '<table class="comps"><thead><tr><th>Split</th><th>Fit / test</th><th style="text-align:right">Curve error</th><th style="text-align:right">Full model error</th><th style="text-align:right">Median-multiple error</th></tr></thead><tbody>' + oosRows + '</tbody></table></div>' +
       '<div class="method-block"><h2>Farm economics, and the assumptions behind them</h2>' +
       '<p>Every row is netted to a verdict. The plan&rsquo;s gas is the sum of its own steps&rsquo; gas costs ($' + MODEL.gas_setup_usd + ' to set up, $' + MODEL.gas_core_usd + '–$' + MODEL.gas_core_big_usd + ' for the core position, $2–$10 for the second action, $' + MODEL.gas_weekly_usd + ' a week while it is held, $' + MODEL.gas_second_chain_usd + ' for the second chain, $' + MODEL.gas_claim_usd + ' for the claim transaction). The break-even is how many farmers can split an assumed ' + Math.round(MODEL.airdrop_share * 100) + '% of the implied value before one farmer&rsquo;s share stops covering that gas. <b>Farm</b> at ' + MODEL.verdict_farm.toLocaleString('en-US') + ' break-even farmers or more, <b>Thin</b> at ' + MODEL.verdict_thin.toLocaleString('en-US') + ' or more, <b>Skip</b> below that — ' + DATA.verdict_counts.Farm + ' Farm, ' + DATA.verdict_counts.Thin + ' Thin, ' + DATA.verdict_counts.Skip + ' Skip on this board. The ' + Math.round(MODEL.airdrop_share * 100) + '% share is an assumption, not a measurement: no snapshot can say what share a future launch distributes, and the break-even is only as good as it is. The capital a farm locks up ($50–$250 by TVL) is not counted as a cost — it comes back when the position is unwound — only the gas is spent.</p></div>' +
       '<div class="method-block"><h2>What the board leaves out, and why</h2>' +
