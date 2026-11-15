@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Radar — pre-token protocols ranked by implied value</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <div class="top-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">◉</span>
+      <div>
+        <h1>TOKEN RADAR</h1>
+        <p class="tagline">Every protocol that records no token, ranked by what its launch would be worth.</p>
+      </div>
+    </div>
+    <dl class="stats" id="stats"></dl>
+  </div>
+  <nav class="tabs" aria-label="Views">
+    <a href="#/board" data-tab="board" class="tab">Board</a>
+    <a href="#/live" data-tab="live" class="tab">Already trading</a>
+    <a href="#/method" data-tab="method" class="tab">Method &amp; data</a>
+  </nav>
+</header>
+<main id="app" aria-busy="true">
+  <noscript><p class="notice">Token Radar needs JavaScript: the whole dataset ships beside this page and renders locally, with no network.</p></noscript>
+</main>
+<aside id="drawer" class="drawer" aria-label="Protocol detail" hidden></aside>
+<footer class="foot">
+  <p>Implied value is this radar's own claim from the snapshot's figures — TVL, seven-day growth and time running with no token — priced off the live-token protocols in the same category. It is not a prediction that a token will launch, or when.</p>
+  <p id="source-line"></p>
+</footer>
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
