@@ -278,33 +278,17 @@
       return '<li>' + esc(p.text) + '<span class="chips">' + chips + '</span></li>';
     }).join('');
 
+    var chains = row.chains || [];
+    var chainList = chains.slice(0, 3).join(', ') + (chains.length > 3 ? ' + ' + (chains.length - 3) + ' more' : '');
     drawer.innerHTML =
       '<button class="close" id="d-close" aria-label="Close detail">✕</button>' +
       '<h2>' + esc(row.name) + '</h2>' +
-      '<p class="meta">Rank <b>#' + row.rank + '</b> · ' + esc(row.category || 'Uncategorised') + ' · ' + esc(row.chains.join(', ') || '—') +
+      '<p class="meta">Rank <b>#' + row.rank + '</b> · ' + esc(row.category || 'Uncategorised') + ' · ' + esc(chainList || '—') +
       (WATCHLIST[row.slug] ? ' · <b>On the watchlist</b>' : ' · Early find, below the $50M floor') + '</p>' +
       '<div class="big-value">' + fmtUsdFull(row.implied_value_usd) + '</div>' +
       '<div class="big-label">Implied value if it launched today</div>' +
-      '<table class="math"><tbody>' +
-      '<tr><td>TVL</td><td>' + fmtUsdFull(row.tvl_usd) + '</td></tr>' +
-      '<tr><td>Size curve: exp(' + DATA.curve.a.toFixed(2) + ' + ' + DATA.curve.b.toFixed(2) + ' × ln(TVL)), fitted on ' + DATA.curve.n + ' live tokens</td><td>' + fmtUsdFull(Math.round(curveVal)) + '</td></tr>' +
-      '<tr><td>Seven-day TVL change</td><td>' + fmtPct(row.change_7d) + ' → × ' + row.growth_multiplier.toFixed(2) + '</td></tr>' +
-      '<tr><td>Time running with no token</td><td>' + fmtAge(row.age_days) + ' → × ' + row.maturity_multiplier.toFixed(2) + '</td></tr>' +
-      '<tr><td>Page recomputes from the same figures</td><td>' + fmtUsdFull(recomputed) + (match ? ' ✓' : ' — differs') + '</td></tr>' +
-      '</tbody></table>' +
-      '<h3 class="section-title">Is the farm worth it?</h3>' +
-      '<table class="math"><tbody>' +
-      '<tr><td>Farm verdict</td><td><span class="verdict ' + vCls + '">' + row.farm_verdict + '</span></td></tr>' +
-      '<tr><td>Plan gas, all steps</td><td>$' + row.gas_total_usd + '</td></tr>' +
-      '<tr><td>Break-even farmers at a 5% airdrop share</td><td>' + row.breakeven_farmers.toLocaleString('en-US') + '</td></tr>' +
-      '</tbody></table>' +
-      '<p class="note"><b>What the verdict means:</b> if 5% of the implied value were shared among farmers, ' + row.breakeven_farmers.toLocaleString('en-US') + ' farmers could each cover the plan&rsquo;s $' + row.gas_total_usd + ' of gas. ' +
-      (row.farm_verdict === 'Farm'
-        ? '<b>Farm</b> — up to ' + row.breakeven_farmers.toLocaleString('en-US') + ' farmers could each cover the gas, so it pays while the crowd stays below ' + row.breakeven_farmers.toLocaleString('en-US') + '.'
-        : row.farm_verdict === 'Thin'
-          ? '<b>Thin</b> — the same, but the crowd cap is ' + row.breakeven_farmers.toLocaleString('en-US') + ', so it pays only while the crowd stays small.'
-          : '<b>Skip</b> — even ' + row.breakeven_farmers.toLocaleString('en-US') + ' farmers would not each cover the gas, so the gas likely eats the share.') +
-      ' The 5% share is an assumption, stated in the method tab — the break-even is only as good as it is.</p>' +
+      '<p class="recompute">TVL <b>' + fmtUsdFull(row.tvl_usd) + '</b> · curve exp(' + DATA.curve.a.toFixed(2) + ' + ' + DATA.curve.b.toFixed(2) + ' × ln(TVL)), fitted on ' + DATA.curve.n + ' live tokens → <b>' + fmtUsdFull(Math.round(curveVal)) + '</b> · ' + fmtPct(row.change_7d) + ' → × ' + row.growth_multiplier.toFixed(2) + ' · ' + fmtAge(row.age_days) + ' → × ' + row.maturity_multiplier.toFixed(2) + ' · recomputes <b>' + fmtUsdFull(recomputed) + '</b>' + (match ? ' ✓' : ' — differs') + '</p>' +
+      '<div class="verdict-row"><span class="verdict ' + vCls + '">' + row.farm_verdict + '</span><span>Plan gas <b>$' + row.gas_total_usd + '</b></span><span>Break-even <b>' + row.breakeven_farmers.toLocaleString('en-US') + '</b> farmers at a 5% airdrop share</span></div>' +
       '<h3 class="section-title">How to farm it</h3>' +
       '<ol class="steps">' + steps + '</ol>' +
       '<p class="note"><b>Read this first:</b> ' + esc(row.name) + ' records no token in the snapshot — that is not proof it has none, and it is not a promise one will launch. Farm only with money you can afford to lose, never pay anyone to claim an airdrop, and claim only from links the protocol itself publishes.</p>';
@@ -350,7 +334,7 @@
       '<ul class="checklist">' +
       '<li><b>Coverage.</b> The board ranks ' + DATA.board_size + ' protocols — all ' + DATA.watchlist_size + ' of the snapshot&rsquo;s watchlist plus ' + DATA.early_size + ' early finds below the $50M floor — sortable by implied value, TVL, 7-day growth, age or name, and filterable by search, category, chain, verdict and watchlist. The ' + DATA.excluded_size + ' protocols set aside are counted below; the largest twelve are listed, with the reason each was left out.</li>' +
       '<li><b>The value model.</b> The size curve, its fit and its out-of-sample test are in the two sections below; open any row&rsquo;s detail view to see the same curve recomputed from that row&rsquo;s own figures.</li>' +
-      '<li><b>The farm plans.</b> Click any board row: the detail view shows the plan&rsquo;s gas, its break-even crowd size and its verdict — ' + DATA.verdict_counts.Farm + ' Farm, ' + DATA.verdict_counts.Thin + ' Thin, ' + DATA.verdict_counts.Skip + ' Skip — then the seven steps.</li>' +
+      '<li><b>The farm plans.</b> Click any board row: the detail view shows the plan&rsquo;s gas, its break-even crowd size and its verdict — ' + DATA.verdict_counts.Farm + ' Farm, ' + DATA.verdict_counts.Thin + ' Thin, ' + DATA.verdict_counts.Skip + ' Skip — then all seven steps, each with its cost and time, in the same view.</li>' +
       '<li><b>Live vs pre-token.</b> The &ldquo;Already trading&rdquo; tab shows the largest ' + DATA.live_size + ' of the ' + DATA.curve.n + ' live-token protocols the curve is fitted on, kept separate from the board, so a token that already trades is never scored as a launch.</li>' +
       '</ul></div>' +
       '<div class="method-block"><h2>The model, in one line</h2>' +
